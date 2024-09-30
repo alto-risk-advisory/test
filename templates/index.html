@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALTO XML converter</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}?v=2.0">
+    <link rel="icon" href="{{ url_for('static', path='images/favicon1.png') }}" type="image/png">
+</head>
+<body>
+    <img src="{{ url_for('static', path='images/logo-1.png') }}" alt="Company Logo" class="logo">
+
+    <div class="container">
+        <h1>JPK CIT - XML Converter</h1>
+
+        <!-- Mode selection buttons -->
+        <div class="mode-buttons">
+            <button id="excel-to-xml" class="mode-button active" onclick="selectMode('excel-to-xml')">Excel to XML</button>
+            <button id="xml-to-excel" class="mode-button" onclick="selectMode('xml-to-excel')">XML to Excel</button>
+        </div>
+
+        <!-- Drag and Drop Area -->
+        <div id="drop-area">
+            <form class="my-form">
+                <p>Drag and drop your files here, or <span class="browse">browse</span> to select a file.</p>
+                <input type="file" id="fileElem" accept=".xlsx" style="display:none;">
+            </form>
+        </div>
+
+        <!-- Upload button -->
+        <button type="button" class="submit-button" onclick="uploadFile()">Upload File</button>
+
+        <!-- Display processed data (initially hidden) -->
+        <h2 id="excel-output-title" style="display:none;">Excel Output:</h2>
+        <div id="result" style="display:none;"></div>
+
+        <!-- Display XML output (initially hidden) -->
+        <h2 id="xml-output-title" style="display:none;">XML Output:</h2>
+        <div id="xml-result" style="display:none;"></div>
+
+        <!-- Download button for XML (initially hidden) -->
+        <button class="submit-button" id="download-button" style="display: none;" onclick="downloadXML()">Download XML</button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>&copy; 2024 ALTO. All rights reserved.</p>
+            <p><a href="/privacy-policy" class="footer-link">Privacy Policy</a> | <a href="/terms-of-service" class="footer-link">Terms of Service</a></p>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script>
+        let file;
+        let xmlFilename;
+        let mode = 'excel-to-xml'; // Default mode
+
+        // Setup drag-and-drop area
+        let dropArea = document.getElementById("drop-area");
+
+        // Prevent default behaviors for drag and drop events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight the drop area when a file is dragged over
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.add('highlight'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.remove('highlight'), false);
+        });
+
+        // Handle the file drop
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+
+            handleFiles(files);
+        }
+
+        // Function to handle files (called both for drag-drop and file browse)
+        function handleFiles(files) {
+            file = files[0];
+            if (file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+                document.querySelector('.my-form p').innerHTML = file.name + " selected.";
+            } else {
+                alert("Please upload a valid Excel (.xlsx) file.");
+            }
+        }
+
+        // Browse button functionality - trigger file input click
+        document.querySelector('.browse').addEventListener('click', function() {
+            document.getElementById('fileElem').click();
+        });
+
+        // Handle file input change
+        document.getElementById('fileElem').addEventListener('change', function(e) {
+            handleFiles(e.target.files);
+        });
+
+        // Function to upload file via AJAX
+        function uploadFile() {
+            if (!file) {
+                alert("No file selected.");
+                return;
+            }
+
+            let formData = new FormData();
+            formData.append("file", file);
+
+            fetch("/upload", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                // Clear any previous results
+                document.getElementById("result").innerHTML = '';
+                document.getElementById("xml-result").innerHTML = '';
+
+                // Hide both outputs initially
+                document.getElementById("result").style.display = 'none';
+                document.getElementById("xml-result").style.display = 'none';
+                document.getElementById("excel-output-title").style.display = 'none';
+                document.getElementById("xml-output-title").style.display = 'none';
+
+                // Show the relevant output section based on the mode
+                if (mode === 'excel-to-xml') {
+                    // Show XML output
+                    let xmlOutput = document.createElement('pre');
+                    xmlOutput.textContent = data.xml_data;
+                    document.getElementById("xml-result").appendChild(xmlOutput);
+
+                    document.getElementById("xml-output-title").style.display = 'block';
+                    document.getElementById("xml-result").style.display = 'block';
+
+                    // Show download button and save the XML filename
+                    xmlFilename = data.xml_filename;
+                    document.getElementById("download-button").style.display = 'block';
+
+                } else if (mode === 'xml-to-excel') {
+                    // Show Excel output
+                    for (const [sheetName, sheetData] of Object.entries(data.processed_data)) {
+                        let sheetHeading = document.createElement('h3');
+                        sheetHeading.textContent = `Sheet: ${sheetName}`;
+
+                        let sheetContent = document.createElement('pre');
+                        sheetContent.textContent = sheetData;
+
+                        document.getElementById("result").appendChild(sheetHeading);
+                        document.getElementById("result").appendChild(sheetContent);
+                    }
+
+                    document.getElementById("excel-output-title").style.display = 'block';
+                    document.getElementById("result").style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error("Error uploading file:", error);
+                alert("Error processing the file.");
+            });
+        }
+
+        // Function to select mode
+        function selectMode(selectedMode) {
+            // Update the mode
+            mode = selectedMode;
+            
+            // Remove 'active' class from both buttons
+            document.getElementById('excel-to-xml').classList.remove('active');
+            document.getElementById('xml-to-excel').classList.remove('active');
+            
+            // Add 'active' class to the selected button
+            document.getElementById(selectedMode).classList.add('active');
+        }
+
+        // Function to download the XML file
+        function downloadXML() {
+            window.location.href = `/download/${xmlFilename}`;
+        }
+    </script>
+</body>
+</html>
